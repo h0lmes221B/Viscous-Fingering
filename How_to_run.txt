@@ -1,0 +1,11 @@
+gcc -O3 -o a.out Source.c -lm -lrfftw -lfftw
+
+./a.out data1 rout
+
+
+
+Don't forget this
+
+gcc -O3 -o a.out Source.c -lm -lrfftw_threads -lfftw_threads -lrfftw -lfftw -
+
+./a.out data1 rout
