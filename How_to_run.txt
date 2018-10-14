@@ -6,6 +6,6 @@ gcc -O3 -o a.out Source.c -lm -lrfftw -lfftw
 
 Don't forget this
 
-gcc -O3 -o a.out Source.c -lm -lrfftw_threads -lfftw_threads -lrfftw -lfftw -
+gcc -O3 -o a.out Source.c -lm -lrfftw_threads -lfftw_threads -lrfftw -lfftw -lpthread
 
 ./a.out data1 rout
