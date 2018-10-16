@@ -1,0 +1,13 @@
+option = 1
+alea = 0
+R = -2
+eps =1
+dt = 0.2
+integration_time = 1000
+total_time = 0
+tld = 5
+tprofil = 100
+tconc = 100
+width = 256
+
+
