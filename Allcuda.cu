@@ -75,6 +75,7 @@ void write_data(char *filein);
 /*void detecteur();*/
 
 real *c,*Psi;
+
 real *cG,*PsiG; 
 real *kx,*ky,*k2,*k2t;
 real *kxG,*kyG,*k2G,*k2tG;
@@ -91,13 +92,13 @@ int    back,front;
 
 double tprofil,tconc,tld,total_time,integration_time;
 double taille,dt2,R,dt,eps,width;
-/***********************************************************************/
 
 
-__global__ void definitions1(real* Kx, double interm, int CELX)
+
+__global__ void definitions1(real* Kx, double interm, int* CELXG)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if(idx < CELX/2+1)
+	if(idx < CELXG[0]/2+1)
 		Kx[idx] = idx*interm;	
 }
 
@@ -108,11 +109,11 @@ __global__ void definitions2(real* Ky, double interm)
 	Ky[idy] = (((idy+CELY/2-1)%CELY)-CELY/2+1)*interm;	
 }
 
-__global__ void definitions3(int idint, real* K2, real* K2T, real* Dtk2,real* Dt2k2, real* Kx, real* Ky, double eps,double dt, double dt2, int CELX)
+__global__ void definitions3(int idy, int idint, real* K2, real* K2T, real* Dtk2,real* Dt2k2, real* Kx, real* Ky, double eps,double dt, double dt2, int* CELXG)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int id = idx+idint;
-	if(idx < CELX/2+1)
+	if(idx < CELXG[0]/2+1)
 	{
 		K2[id] = eps*Ky[idy]*Ky[idy]+Kx[idx]*Kx[idx];
 		K2T[id] = Ky[idy]*Ky[idy]+Kx[idx]*Kx[idx];
@@ -129,10 +130,10 @@ __global__ void initialize_zero(real* Psi)
 
 }	
 
-__global__ void dk_xloop(int idint, complexy* dv, complexy *x, int CELX)
+__global__ void dk_xloop(real *kx,int idint, complexy *dv, complexy *x, int *CELXG)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if(idx < CELX/2 + 1)
+	if(idx < CELXG[0]/2 + 1)
 	{
 		int id =  idx + idint;
 		dv[id].x = -kx[idx]*x[id].y;
@@ -141,10 +142,10 @@ __global__ void dk_xloop(int idint, complexy* dv, complexy *x, int CELX)
 
 }
 
-__global__ void dk_yloop(int idint, complexy* a, complexy *b, int idy, int CELX)
+__global__ void dk_yloop(real *ky,int idint, complexy* dv, complexy *x, int idy, int *CELXG)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if(idx < CELX/2 + 1)
+	if(idx < CELXG[0]/2 + 1)
 	{
 		int id = idx + idint;
 		dv[id].x = -ky[idy]*x[id].y;
@@ -154,14 +155,14 @@ __global__ void dk_yloop(int idint, complexy* a, complexy *b, int idy, int CELX)
 }
 
 
-__global__ void tfiloop(int x)
+__global__ void tfiloop(real* x, int *taille)
 {
 	int id = threadIdx.x + blockIdx.x * blockDim.x;
-	x[id] = x[id]/taille;
+	x[id] = x[id]/taille[0];
 }
 
 
-__global__ void premeirefois1(real *Jold, real *N, real *cx, real *cy, real *Psix, real *Psiy)
+__global__ void premierefois1(real *Jold, real *N, real *cx, real *cy, real *Psix, real *Psiy)
 {
 	int id = blockDim.x * blockIdx.x + threadIdx.x;
 	Jold[id] = Psiy[id]*cx[id]-Psix[id]*cy[id];
@@ -169,10 +170,10 @@ __global__ void premeirefois1(real *Jold, real *N, real *cx, real *cy, real *Psi
 }
 
 
-__global__ void premierefois2(complexy *cc,complexy *ccold,complexy *JJold, double dt, real *k2, int CELY, int CELX)
+__global__ void premierefois2(complexy *cc,complexy *ccold,complexy *JJold, double dt, real *k2, int *CELYG, int *CELXG)
 {
 	int id = blockDim.x*blockIdx.x + threadIdx.x;
-	if(id < CELY*(CELX/2+1))
+	if(id < CELYG[0]*(CELXG[0]/2+1))
 	{
 		ccold[id].x = cc[id].x;
 		ccold[id].y = cc[id].y;
@@ -180,14 +181,15 @@ __global__ void premierefois2(complexy *cc,complexy *ccold,complexy *JJold, doub
 		cc[id].y = -dt*JJold[id].y+(1.-k2[id]*dt)*cc[id].y;		
 	}
 }
-__global void premierefois3(complexy *PP, double R, complexy *NN, complexy *ccy, real *k2t, int CELX, int CELY)
+__global__ void premierefois3(complexy *PP, double R, complexy *NN, complexy *ccy, real *k2t, int *CELXG, int *CELYG)
 {
+	int id = threadIdx.x + blockDim.x*blockIdx.x;
 	if(id == 0)
 	{
 		PP[id].x = 0;
 		PP[id].y = 0;
 	}
-	else if(id < CELY * (CELX/2+1))
+	else if(id < CELYG[0] * (CELXG[0]/2+1))
 	{
 		PP[id].x = R*(NN[id].x+ccy[id].x)/k2t[id];
 		PP[id].y = R*(NN[id].y+ccy[id].y)/k2t[id];
@@ -202,10 +204,10 @@ __global__ void integration1(real *J, real *N, real *Psiy, real *Psix,real *cx, 
 
 }
 
-__global__ void integration2(complexy *ccnew,complexy *cc,double dt, complexy *JJ, complexy *JJold, real *dtk2, int CELX, int CELY)
+__global__ void integration2(complexy *ccnew,complexy *cc,double dt, complexy *JJ, complexy *JJold, real *dtk2, int *CELXG, int *CELYG)
 {
 	int id = threadIdx.x + blockDim.x*blockIdx.x;
-	if(id < CELY*(CELX/2+1))
+	if(id < CELYG[0]*(CELXG[0]/2+1))
 	{
 		ccnew[id].x = cc[id].x-dt*(1.5*JJ[id].x-0.5*JJold[id].x);
 		ccnew[id].x = ccnew[id].x*dtk2[id];
@@ -214,7 +216,7 @@ __global__ void integration2(complexy *ccnew,complexy *cc,double dt, complexy *J
 	}
 }
 
-__global__ void integration3(complexy *PP, complexy *NN, complexy *ccy, real *k2t, double R, int CELX, int CELY)
+__global__ void integration3(complexy *PP, complexy *NN, complexy *ccy, real *k2t, double R, int *CELXG, int *CELYG)
 {
 	int id = threadIdx.x + blockDim.x*blockIdx.x;
 	if(id == 0)
@@ -222,7 +224,7 @@ __global__ void integration3(complexy *PP, complexy *NN, complexy *ccy, real *k2
 		PP[id].x = 0.;
 		PP[id].y = 0.;
 	}
-	else if(id < CELY*(CELX/2+1))
+	else if(id < CELYG[0]*(CELXG[0]/2+1))
 	{
 		PP[id].x = R*(NN[id].x+ccy[id].x)/k2t[id];
 		PP[id].y = R*(NN[id].y+ccy[id].y)/k2t[id];
@@ -237,7 +239,7 @@ __global__ void integration4(real *Jnew, real *Psix, real *Psiy, real *cx, real 
 
 }
 
-__global__ void integration5(complexy *cc, complexy *ccold, double dt2, complexy *JJnew, complexy *JJ, real *dt2k2, complexy *cc)
+__global__ void integration5(complexy *cc, complexy *ccold, double dt2, complexy *JJnew, complexy *JJ, real *dt2k2, complexy *ccnew, complexy *JJold)
 {
 	int id = threadIdx.x + blockDim.x*blockIdx.x;
 	if(id < CELY*(CELX/2+1))
@@ -250,12 +252,22 @@ __global__ void integration5(complexy *cc, complexy *ccold, double dt2, complexy
 		JJold[id].y = JJ[id].y;
 	}
 }
-
+int *CELXG, *CELYG;
 
 
 int main(int argc,char **argv)
 {
 	int seed;
+
+
+	int CELXC[1], CELYC[1];
+	CELXC[0] = 1;
+	CELYC[0] = 1;
+	
+	cudaALLOC(CELXG, int,1,main);
+	cudaALLOC(CELYG, int,1,main);
+	cudaMemcpy(CELXG, CELXC, sizeof(int),cudaMemcpyHostToDevice);
+	cudaMemcpy(CELYG, CELYC, sizeof(int),cudaMemcpyHostToDevice);
         int i,idx,idy,id,idint,npas;
 	int size[2],nligne,opt;
 	int *sizeG;
@@ -377,21 +389,9 @@ int main(int argc,char **argv)
 	cudaFree(k2t);
 	cudaFree(dtk2);
 	cudaFree(dt2k2);
-	cudaFree(cG);
-	cudaFree(ccoldG);
-	cudaFree(JJoldG);
-	cudaFree(ccG);
-	cudaFree(PsiG);
-	cudaFree(PPG);
-	cudaFree(kyG);
-	cudaFree(kxG);
-	cudaFree(k2G);
-	cudaFree(k2tG);
-	cudaFree(dtk2G);
-	cudaFree(dt2k2G);
-	cudaFree(pfft);
-	cudaFree(pinv);
-	return 0;
+	cudaFree(CELXG);
+	cudaFree(CELYG);
+	
 }
 /*&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&*/
 /*void detecteur()
@@ -420,7 +420,7 @@ void pmoyen(char *filein) // filein = rout
 	int  idx,idy,id,idint;
 	double interm,moyenne1,moyenne2,pos,tmp;
 	double beginning,area,M1,M2,M3,Mtot,temp,sfing;
-	real *cmx,*cmxG;
+	real *cmx;
 	double ddx,ddy;
 	int d1,d2,c99;
 	int longueur=0;
@@ -759,7 +759,14 @@ void tfi(complexy *xx,real *x)
 	// cudaMemcpy(x, xG,CELY*CELX*sizeof(real), cudaMemcpyDeviceToHost);
 
 	// cudaDeviceSynchronize();
-	tfiloop<<<1024,1024>>>(x);
+	int *tailleG, *tailleC;
+	ALLOC(tailleC, int, 1, tfi);
+	ALLOC(tailleG, int, 1, tfi);
+	
+	tailleC[0] = taille;
+	cudaMemcpy(tailleG, tailleC, sizeof(int), cudaMemcpyHostToDevice);
+
+	tfiloop<<<1024,1024>>>(x, tailleG);
 	// for(id=0;id<CELY*CELX;id++) x[id] = x[id]/taille;
 	// cudaFree(xxG);
 	// cudaFree(xG);
@@ -773,6 +780,7 @@ void premiere_fois()
 	real *Psix,*Psiy;
 	complexy *deriv,*ccy,*NN, *NNG;
 
+	cudaALLOC(ccy,complexy,CELY*(CELX/2+1),integration);
 	cudaALLOC(Jold,real,CELX*CELY,premiere_fois);
 	cudaALLOC(N,real,CELX*CELY,premiere_fois);
 	cudaALLOC(JoldG,real,CELX*CELY,premiere_fois);
@@ -783,6 +791,7 @@ void premiere_fois()
 	cudaALLOC(Psiy,real,CELX*CELY,premiere_fois);
 	cudaALLOC(deriv,complexy,CELY*(CELX/2+1),premiere_fois);
 	cudaALLOC(NN,complexy,CELY*(CELX/2+1),premiere_fois);
+
 
 	tf(pfft,c,cc);
 	// cudaMemcpy(cc, ccG, CELY*(CELX/2+1)*sizeof(complexy), cudaMemcpyDeviceToHost);
@@ -798,7 +807,7 @@ void premiere_fois()
 	/*********** DERIVEES DANS L'ESPACE DE FOURIER  **************/
 	dK_y(cc,deriv);
 	tfi(deriv,cy);
-	dK_x(cccc,deriv);
+	dK_x(cc,deriv);
 	tfi(deriv,cx);
 	dK_y(PP,deriv);
 	tfi(deriv,Psiy);
@@ -828,14 +837,16 @@ void premiere_fois()
 
 	/*********** TERMES LINEAIRES DANS L'ESPACE DE FOURIER  *******/
 
-	premierefois2<<<513,1024>>>(cc,ccold,JJold,dt,k2, CELY, CELX);
-
-	cudaALLOC(ccy,complexy,CELY*(CELX/2+1),integration);
-	dK_y(cc,ccy);
-
-	premierefois3<<<513,1024>>>(PP, R, NN, ccy, k2t, CELX, CELY)
+	premierefois2<<<513,1024>>>(cc,ccold,JJold,dt,k2, CELYG, CELXG);
 
 	
+	dK_y(cc,ccy);
+
+	premierefois3<<<513,1024>>>(PP, R, NN, ccy, k2t, CELXG, CELYG);
+
+	cudaFree(Jold);
+	cudaFree(N);
+	cudaFree(deriv);
 	cudaFree(ccy);
 	cudaFree(cx);
 	cudaFree(cy);
@@ -844,8 +855,7 @@ void premiere_fois()
 	cudaFree(NN);
 	cudaFree(JoldG);
 	cudaFree(NG);
-	cudaFree(JJoldG);
-	cudaFree(NNG);
+	
 
 }
 /**************************************************************************/
@@ -857,7 +867,7 @@ void integration()
 	real *cx,*cy,*Jnew,*cnew,*cnewG, *JnewG;
 	complexy *deriv,*ccy,*JJnew,*JJnewG,*ccnew,*JJ,*NN,*JJG,*NNG,*ccnewG;
 
-	cudaALLOC(J,real,CELX*CELY,integration);
+	
 	cudaALLOC(N,real,CELX*CELY,integration);
 	cudaALLOC(cx,real,CELX*CELY,integration);
 	cudaALLOC(cy,real,CELX*CELY,integration);
@@ -869,7 +879,7 @@ void integration()
 	//cudaALLOC(JG,real,CELX*CELY,integration);
 	//cudaALLOC(NG,real,CELX*CELY,integration);
 	//cudaALLOC(JnewG,real,CELX*CELY,integration);
-
+	cudaALLOC(J,real,CELX*CELY,integration);
 	cudaALLOC(deriv,complexy,CELY*(CELX/2+1),integration);
 	cudaALLOC(ccnew,complexy,CELY*(CELX/2+1),integration);
 	cudaALLOC(JJ,complexy,CELY*(CELX/2+1),integration);
@@ -901,11 +911,11 @@ void integration()
 	cudaFree(N);
 	tf(pfft,c,cc);
 
-	integration2<<<513,1024>>>(ccnew,cc,dt,JJ,JJold,dtk2,CELX,CELY);
+	integration2<<<513,1024>>>(ccnew,cc,dt,JJ,JJold,dtk2,CELXG,CELYG);
 
 	dK_y(ccnew,ccy);  /* necessaire car c a change en cours de route */
 
-	integration3<<<513,1024>>>(PP, NN, ccy, k2t, R, CELX, CELY);
+	integration3<<<513,1024>>>(PP, NN, ccy, k2t, R, CELXG, CELYG);
 	tfi(ccy,cy);
 	cudaFree(ccy);
 	dK_x(ccnew,deriv);
@@ -922,8 +932,12 @@ void integration()
 	tf(pfft,Jnew,JJnew);
 	tf(pfft,cnew,ccnew);
 
-	integration5<<<513,1024>>> (cc,ccold,dt2,JJnew,JJ,dt2k2,ccnew);
+	integration5<<<513,1024>>> (cc,ccold,dt2,JJnew,JJ,dt2k2,ccnew, JJold);
 
+
+	cudaFree(J);
+	cudaFree(N);
+	cudaFree(ccy);
 	cudaFree(JJnew);
 	cudaFree(ccnew);
 	cudaFree(deriv);
@@ -935,14 +949,6 @@ void integration()
 	cudaFree(cnew);
 	cudaFree(Jnew);
 	cudaFree(NN);
-	cudaFree(JG);
-	cudaFree(NG);
-	cudaFree(JnewG);
-	cudaFree(cnewG);
-	cudaFree(JJG);
-	cudaFree(NNG);
-	cudaFree(JJnewG);
-	cudaFree(ccnewG);
 	
 }
 /*=========================================================================*/
@@ -1016,24 +1022,25 @@ void condition_initiale(int choix)
 
 }
 	cudaMemcpy(c, ccc, sizeof(real)*CELX*CELY, cudaMemcpyHostToDevice);
+	free(ccc);
 }
 
 /*=========================================================================*/
 void definitions(real Kx[],real Ky[],real K2[],real K2T[],real Dtk2[],real Dt2k2[])
 {
 	printf("***INSIDE DEFINITION FUNCTION****\n");
-	int  idx,idy,idint,id;
+	int  idy,idint;
 	double interm;
 
 	interm = M_2PI/Lx;
-	definitions1<<<5,820>>>(Kx, interm, CELX);
+	definitions1<<<5,820>>>(Kx, interm, CELXG);
 
 	interm = M_2PI/Ly;
 	definitions2<<<1,128>>>(Ky,interm);
 
 	for(idy=0;idy<CELY;idy+=1){
 		idint = idy*(CELX/2+1);
-		definitions3<<<5,820>>>(idint, K2, K2T, Dtk2, Dt2k2, Kx, Ky, eps, dt, dt2, CELX);
+		definitions3<<<5,820>>>(idy,idint, K2, K2T, Dtk2, Dt2k2, Kx, Ky, eps, dt, dt2, CELXG);
 	}
 
 	printf("***DEFINITIONS ENDS****\n");
@@ -1041,10 +1048,10 @@ void definitions(real Kx[],real Ky[],real K2[],real K2T[],real Dtk2[],real Dt2k2
 /*=========================================================================*/
 void dK_x(complexy x[],complexy dv[])
 {
-	int idx,idy,id,idint;
+	int idy,idint;
 	for (idy = 0; idy < CELY; ++idy){
 		idint = idy*(CELX/2+1);
-		dk_xloop<<<5,820>>>(idint,dv,x, CELX);
+		dk_xloop<<<5,820>>>(kx,idint,dv,x, CELXG);
 		
 		// for(idx=0;idx<CELX/2+1;idx+=1){
 		// 	id = idx+idint;
@@ -1056,17 +1063,13 @@ void dK_x(complexy x[],complexy dv[])
 /*=========================================================================*/
 void dK_y(complexy x[],complexy dv[])
 {
-	int idx,idy,id,idint;
+	int idy,idint;
 
 	for (idy = 0; idy < CELY; ++idy){
 		idint = idy*(CELX/2+1);
-		dk_yloop<<<5,820>>>(idint,dv,x, idy, CELX);
+		dk_yloop<<<5,820>>>(ky,idint,dv,x, idy, CELXG);
 		
-		// for(idx=0;idx<CELX/2+1;idx+=1){
-		// 	id = idx+idint;
-		// 	dv[id].x = -ky[idy]*x[id].y;
-		// 	dv[id].y = ky[idy]*x[id].x;
-		// }
+		
 	}
 }
 /*=========================================================================*/
