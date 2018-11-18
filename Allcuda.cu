@@ -761,7 +761,7 @@ void tfi(complexy *xx,real *x)
 	// cudaDeviceSynchronize();
 	int *tailleG, *tailleC;
 	ALLOC(tailleC, int, 1, tfi);
-	ALLOC(tailleG, int, 1, tfi);
+	cudaALLOC(tailleG, int, 1, tfi);
 	
 	tailleC[0] = taille;
 	cudaMemcpy(tailleG, tailleC, sizeof(int), cudaMemcpyHostToDevice);
