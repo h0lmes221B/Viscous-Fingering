@@ -60,15 +60,15 @@ cufftHandle pfft,pinv;
 
 extern int rand();			/* extern : permet de dÃ©clarer une fonction dÃ©finie ailleurs */
 double arand();
-void definitions();
+void definitions(real *,real *,real *,real *,real *,real *);
 void condition_initiale(int choix);
-void dK_x();
-void dK_y();
+void dK_x(complexy *,complexy *);
+void dK_y(complexy *,complexy *);
 void lap();
 void integration();
 void read_parameters(char *file);
 void premiere_fois();
-void tfi();
+void tfi(complexy *, real *);
 void pmoyen(char *filein);
 void mean_wavenumber(char *filein);
 void write_data(char *filein);
@@ -250,7 +250,7 @@ __global__ void integration5(complexy *cc, complexy *ccold, double dt2, complexy
 		JJold[id].y = JJ[id].y;
 	}
 }
-	
+
 
 
 int main(int argc,char **argv)
@@ -365,18 +365,18 @@ int main(int argc,char **argv)
 // 	printf("Temps final de la simulation = %f\n",total_time);
 // 	printf("------------------------------------------------------------\n\n");
 
-	free(c);
-	free(ccold);
-	free(JJold);
-	free(cc);
-	free(Psi);
-	free(PP);
-	free(ky);
-	free(kx);
-	free(k2);
-	free(k2t);
-	free(dtk2);
-	free(dt2k2);
+	cudaFree(c);
+	cudaFree(ccold);
+	cudaFree(JJold);
+	cudaFree(cc);
+	cudaFree(Psi);
+	cudaFree(PP);
+	cudaFree(ky);
+	cudaFree(kx);
+	cudaFree(k2);
+	cudaFree(k2t);
+	cudaFree(dtk2);
+	cudaFree(dt2k2);
 	cudaFree(cG);
 	cudaFree(ccoldG);
 	cudaFree(JJoldG);
@@ -619,7 +619,7 @@ void mean_wavenumber(char *filein)
 	ALLOC(cmy,real,CELY,mean_wavenumber);
 	ALLOC(ttemp,complexy,CELY*(CELX/2+1),mean_wavenumber);
 	cudaALLOC(tempG,real,CELY*CELX,mean_wavenumber);
-	//cudaALLOC(cmyG,real,CELY,mean_wavenumber);
+	cudaALLOC(cmyG,real,CELY,mean_wavenumber);
 	cudaALLOC(ttempG,complexy,CELY*(CELX/2+1),mean_wavenumber);
 	ALLOC(P,double,CELY/2+1,mean_wavenumber);
 
@@ -836,12 +836,12 @@ void premiere_fois()
 	premierefois3<<<513,1024>>>(PP, R, NN, ccy, k2t, CELX, CELY)
 
 	
-	free(ccy);
-	free(cx);
-	free(cy);
-	free(Psix);
-	free(Psiy);
-	free(NN);
+	cudaFree(ccy);
+	cudaFree(cx);
+	cudaFree(cy);
+	cudaFree(Psix);
+	cudaFree(Psiy);
+	cudaFree(NN);
 	cudaFree(JoldG);
 	cudaFree(NG);
 	cudaFree(JJoldG);
