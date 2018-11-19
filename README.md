@@ -1,3 +1,3 @@
 # VF
-```Allucuda.cu is the final code```
->>> nvcc Allucuda.cu -lcufftw -lcufft -lm
+```Final.cu is the final code```
+>>> nvcc Final.cu -lcufftw -lcufft -lm
